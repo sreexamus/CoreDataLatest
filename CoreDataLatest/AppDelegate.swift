@@ -7,6 +7,7 @@
 //
 
 import UIKit
+import CoreData
 
 @UIApplicationMain
 class AppDelegate: UIResponder, UIApplicationDelegate {
@@ -16,6 +17,9 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
         // Override point for customization after application launch.
+        if getCommunityDataCount() == 0 {
+            fetchMockData()
+        }
         return true
     }
 
@@ -40,7 +44,70 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     func applicationWillTerminate(_ application: UIApplication) {
         // Called when the application is about to terminate. Save data if appropriate. See also applicationDidEnterBackground:.
     }
-
-
+    
+    func fetchMockData() {
+        let privateManagerObjContext = CoreDataStack.shared.getPrivateManagedObjectContext()
+        
+        privateManagerObjContext.perform {
+            
+            let url = Bundle.main.url(forResource: "CommunityGroupMock", withExtension: "json")
+            do
+            {
+                let data = try Data(contentsOf: url!)
+                let communityDictionary = try (JSONSerialization.jsonObject(with: data, options: JSONSerialization.ReadingOptions.mutableContainers) as! [String: Any])
+                
+                let communityData = communityDictionary["groups"] as! NSArray
+                
+                for comminity in communityData {
+                    let singleComminityData = comminity as? [String: Any]
+                    let groupId = singleComminityData?["groupId"] as? Int16
+                    let groupName = singleComminityData?["name"] as? String
+                    
+                    
+                    let communityGroup = NSEntityDescription.insertNewObject(forEntityName: EnitityConstants.communityGroup, into: privateManagerObjContext) as! CommunityGroup
+                    communityGroup.name = groupName
+                    communityGroup.groupId = groupId!
+                    
+                    let people = singleComminityData?["people"] as? [Any]
+                    var persons = Set<Person>()
+                    people?.forEach{ person in
+                        
+                        guard let personData = person as? [String: Any],
+                            let name = personData["name"] as? String,
+                            let gender = personData["gender"] as? String,
+                            let age = personData["age"] as? Int16 else {
+                                return }
+                        let person = NSEntityDescription.insertNewObject(forEntityName: "Person", into: privateManagerObjContext) as! Person
+                        person.name = name
+                        person.age = age
+                        person.community = communityGroup
+                        person.gender = gender
+                        persons.insert(person)
+                    }
+                    
+                    
+                    communityGroup.person = persons as NSSet
+                    
+                }
+                
+            } catch {
+                print("error in fetching the data \(error)")
+            }
+            
+            privateManagerObjContext.saveRecursively()
+        }
+    }
+    
+    private func getCommunityDataCount() -> Int {
+        var communityCount = 0
+        do {
+            let fetchReq = NSFetchRequest<NSFetchRequestResult>(entityName: "CommunityGroup")
+            communityCount = try CoreDataStack.shared.getPrivateManagedObjectContext().count(for: fetchReq)
+            print("countCommunity... \(communityCount)")
+        } catch {
+            print("error is \(error)")
+        }
+        return communityCount
+    }
 }
 
